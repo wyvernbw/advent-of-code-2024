@@ -1,13 +1,8 @@
 #![feature(hash_set_entry)]
-use std::{
-    collections::{HashMap, HashSet},
-    convert::identity,
-    hash::Hash,
-};
+use std::{collections::HashSet, hash::Hash};
 
 use anyhow::Context;
 use indicatif::ProgressStyle;
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use tailcall::tailcall;
 use thiserror::Error;
 use tracing::{instrument, Level, Span};

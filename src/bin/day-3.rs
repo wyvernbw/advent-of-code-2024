@@ -1,11 +1,11 @@
 use anyhow::bail;
 use nom::{
     branch::alt,
-    bytes::complete::{tag, take, take_till, take_until, take_until1},
-    character::complete::{char, digit0, digit1},
-    combinator::{cut, map, map_res, opt, value},
-    multi::{many0, many1},
-    sequence::{delimited, pair, preceded, separated_pair, tuple},
+    bytes::complete::{tag, take, take_until},
+    character::complete::digit1,
+    combinator::{map, map_res, value},
+    multi::many1,
+    sequence::{delimited, pair, preceded, separated_pair},
     IResult,
 };
 

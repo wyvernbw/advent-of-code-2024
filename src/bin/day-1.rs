@@ -1,9 +1,9 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use anyhow::Context;
 use nom::{
     character::complete::{digit1, multispace1},
-    combinator::{map, map_res},
+    combinator::map_res,
     sequence::tuple,
     IResult,
 };

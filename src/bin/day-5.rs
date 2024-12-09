@@ -135,7 +135,7 @@ fn updates_ordered(
 ) -> bool {
     updates
         .iter()
-        .all(|el| ordered_correctly(*el, &rule_map, update_map))
+        .all(|el| ordered_correctly(*el, rule_map, update_map))
 }
 
 fn part_1() -> anyhow::Result<u32> {
@@ -143,7 +143,7 @@ fn part_1() -> anyhow::Result<u32> {
         updates,
         update_map,
         rule_map,
-        rules,
+        ..
     } = get_problem_state()?;
     let sum = updates
         .iter()
