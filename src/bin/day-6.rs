@@ -7,6 +7,8 @@ use std::{
 
 use anyhow::Context;
 use indicatif::ProgressStyle;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use tailcall::tailcall;
 use thiserror::Error;
 use tracing::{instrument, Level, Span};
 use tracing_indicatif::{span_ext::IndicatifSpanExt, IndicatifLayer};
@@ -143,19 +145,20 @@ pub struct GuardState(Position, Direction);
 #[error("Loop found")]
 pub struct LoopError;
 
+#[tailcall]
 fn simulate(
     grid: &Grid<Cell>,
     guard_state: GuardState,
     mut visited: HashSet<GuardState>,
 ) -> Result<HashSet<GuardState>, LoopError> {
-    if visited.contains(&guard_state) {
-        return Err(LoopError);
-    }
+    let already_visited = visited.contains(&guard_state);
     visited.insert(guard_state);
-    let Some(next_guard_state) = find_next(grid, guard_state, 0) else {
-        return Ok(visited);
-    };
-    simulate(grid, next_guard_state, visited)
+    let next_guard_state = find_next(grid, guard_state, 0);
+    match (already_visited, next_guard_state) {
+        (true, _) => Err(LoopError),
+        (false, Some(next_guard_state)) => simulate(grid, next_guard_state, visited),
+        _ => Ok(visited),
+    }
 }
 
 fn get_unique_positions(visited: &HashSet<GuardState>) -> HashSet<&Position> {
@@ -173,7 +176,7 @@ fn part_2() -> anyhow::Result<usize> {
 
     let span = tracing::span!(Level::INFO, "loop check");
     tracing::info!("Checking for loops");
-    span.pb_set_style(&ProgressStyle::default_bar());
+    span.pb_set_style(&ProgressStyle::default_bar().template("{elapsed} {bar} {pos:>7}/{len:7}")?);
     span.pb_set_length(visited.len() as u64);
     let _span = span.enter();
 
