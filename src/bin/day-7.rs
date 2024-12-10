@@ -94,9 +94,7 @@ impl Operator {
         match self {
             Self::Add => a + b,
             Self::Multiply => a * b,
-            Self::Concat => (a.to_string() + &b.to_string())
-                .parse()
-                .expect("Invalid concatenation"),
+            Self::Concat => a * 10u64.pow((b as f32).log10() as u32 + 1) + b,
         }
     }
 }
@@ -156,7 +154,7 @@ fn part_2() -> anyhow::Result<u64> {
     solve_both(&[Operator::Add, Operator::Multiply, Operator::Concat])
 }
 
-type Memo<'a> = HashMap<u64, u64>;
+type Memo = HashMap<u64, u64>;
 
 #[derive(Debug, Default)]
 struct CacheStats {
@@ -191,17 +189,41 @@ impl CacheStats {
     }
 }
 
+#[derive(Debug)]
+enum SharedMemo<'a> {
+    Owned(Memo),
+    MutBorrow(&'a mut Memo),
+}
+
+impl AsRef<Memo> for SharedMemo<'_> {
+    fn as_ref(&self) -> &Memo {
+        match self {
+            Self::Owned(memo) => memo,
+            Self::MutBorrow(memo) => memo,
+        }
+    }
+}
+
+impl AsMut<Memo> for SharedMemo<'_> {
+    fn as_mut(&mut self) -> &mut Memo {
+        match self {
+            Self::Owned(memo) => memo,
+            Self::MutBorrow(memo) => memo,
+        }
+    }
+}
+
 #[tailcall]
 fn try_solve(
     numbers: &Numbers,
     allowed: &[Operator],
     operators: Option<&[Operator]>,
-    memo: Option<Memo<'_>>,
+    memo: Option<SharedMemo<'_>>,
     cache_stats: Option<Arc<CacheStats>>,
 ) -> anyhow::Result<(u64, Arc<CacheStats>)> {
     let required_operators = numbers.numbers.len() - 1;
     let operators = operators.unwrap_or(&[]);
-    let memo = memo.unwrap_or_default();
+    let mut memo = memo.unwrap_or_else(|| SharedMemo::Owned(HashMap::new()));
     let cache_stats = cache_stats.unwrap_or_default();
     tracing::trace!(?memo);
     match (allowed, operators) {
@@ -213,6 +235,7 @@ fn try_solve(
             };
             let key = Operator::into_key(tail);
             let res = memo
+                .as_ref()
                 .get(&key)
                 .cloned()
                 .or_else(|| {
@@ -235,13 +258,13 @@ fn try_solve(
             .iter()
             .fold(Err(anyhow!("No solution")), move |acc, op| {
                 let new_ops = &[ops, &[*op]].concat();
-                let mut memo = memo.clone();
                 let equation = Equation {
                     numbers,
                     operators: ops,
                 };
                 let key = Operator::into_key(ops);
                 let res = memo
+                    .as_ref()
                     .get(&key)
                     .cloned()
                     .inspect(|_| {
@@ -257,16 +280,17 @@ fn try_solve(
                 let rhs = numbers.numbers[new_ops.len()];
                 let res = op.apply(res, rhs);
                 let key = Operator::into_key(new_ops);
-                memo.insert(key, res);
+                memo.as_mut().insert(key, res);
                 if res > numbers.result {
                     return acc;
                 }
+                let memo = memo.as_mut();
                 acc.or_else(|_| {
                     try_solve(
                         numbers,
                         allowed,
                         Some(new_ops),
-                        Some(memo),
+                        Some(SharedMemo::MutBorrow(memo)),
                         Some(cache_stats.clone()),
                     )
                 })
