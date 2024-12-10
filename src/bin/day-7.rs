@@ -20,17 +20,10 @@ use nom::{
 use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use tailcall::tailcall;
 use tracing::Level;
-use tracing_indicatif::{span_ext::IndicatifSpanExt, IndicatifLayer};
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing_indicatif::span_ext::IndicatifSpanExt;
 
 fn main() -> anyhow::Result<()> {
-    let indicatif_layer = IndicatifLayer::new();
-
-    tracing_subscriber::registry()
-        .with(EnvFilter::from_default_env().add_directive("info".parse()?))
-        .with(tracing_subscriber::fmt::layer().with_writer(indicatif_layer.get_stderr_writer()))
-        .with(indicatif_layer)
-        .init();
+    aoc2024::init_tracing()?;
     test()?;
     tracing::info!(part_1 = ?part_1(), "🔥");
     tracing::info!(part_2 = ?part_2(), "🔥");
