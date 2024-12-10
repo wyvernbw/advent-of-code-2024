@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     ops::Div,
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -34,8 +34,36 @@ fn main() -> anyhow::Result<()> {
         .with(tracing_subscriber::fmt::layer().with_writer(indicatif_layer.get_stderr_writer()))
         .with(indicatif_layer)
         .init();
+    test()?;
     tracing::info!(part_1 = ?part_1(), "🔥");
     tracing::info!(part_2 = ?part_2(), "🔥");
+    Ok(())
+}
+
+fn test() -> anyhow::Result<()> {
+    let input = include_str!("../../inputs/day-7.txt");
+    let (_, numbers) = parse_input(input)?;
+    let wrong = numbers
+        .iter()
+        .filter(|numbers| {
+            numbers.numbers.iter().any(|&n| n > numbers.result)
+                || numbers.numbers[0] + numbers.numbers[1] > numbers.result
+        })
+        .count();
+    let big = numbers
+        .iter()
+        .filter(|numbers| numbers.numbers.len() > 32)
+        .count();
+    tracing::info!(
+        "Found {}/{} equations with more than 32 numbers",
+        big,
+        numbers.len()
+    );
+    tracing::info!(
+        "Found {}/{} trivially prunable operations",
+        wrong,
+        numbers.len()
+    );
     Ok(())
 }
 
@@ -45,11 +73,23 @@ struct Numbers {
     numbers: Vec<u64>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 enum Operator {
     Add,
     Multiply,
     Concat,
+}
+
+impl Operator {
+    fn into_key(ops: &[Operator]) -> u64 {
+        ops.iter()
+            .enumerate()
+            .fold(ops.len() as u64, |acc, (i, op)| match op {
+                Operator::Add => acc,
+                Operator::Multiply => acc | (1 << (2 * i + 8)),
+                Operator::Concat => acc | 1 << (2 * i + 9),
+            })
+    }
 }
 
 impl Operator {
@@ -119,7 +159,7 @@ fn part_2() -> anyhow::Result<u64> {
     solve_both(&[Operator::Add, Operator::Multiply, Operator::Concat])
 }
 
-type Memo<'a> = HashMap<&'a [Operator], u64>;
+type Memo<'a> = HashMap<u64, u64>;
 
 #[derive(Debug, Default)]
 struct CacheStats {
@@ -174,8 +214,9 @@ fn try_solve(
                 numbers,
                 operators: tail,
             };
+            let key = Operator::into_key(tail);
             let res = memo
-                .get(tail)
+                .get(&key)
                 .cloned()
                 .or_else(|| {
                     tracing::trace!("cache miss");
@@ -202,8 +243,9 @@ fn try_solve(
                     numbers,
                     operators: ops,
                 };
+                let key = Operator::into_key(ops);
                 let res = memo
-                    .get(ops)
+                    .get(&key)
                     .cloned()
                     .inspect(|_| {
                         cache_stats.hit();
@@ -217,20 +259,20 @@ fn try_solve(
                     .context("No solution")?;
                 let rhs = numbers.numbers[new_ops.len()];
                 let res = op.apply(res, rhs);
-                memo.insert(new_ops, res);
+                let key = Operator::into_key(new_ops);
+                memo.insert(key, res);
                 if res > numbers.result {
-                    acc
-                } else {
-                    acc.or_else(|_| {
-                        try_solve(
-                            numbers,
-                            allowed,
-                            Some(new_ops),
-                            Some(memo),
-                            Some(cache_stats.clone()),
-                        )
-                    })
+                    return acc;
                 }
+                acc.or_else(|_| {
+                    try_solve(
+                        numbers,
+                        allowed,
+                        Some(new_ops),
+                        Some(memo),
+                        Some(cache_stats.clone()),
+                    )
+                })
             }),
     }
 }
