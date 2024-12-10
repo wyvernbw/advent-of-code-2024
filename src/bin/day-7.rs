@@ -1,9 +1,9 @@
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::HashMap,
     ops::Div,
     sync::{
         atomic::{AtomicUsize, Ordering},
-        Arc, Mutex,
+        Arc,
     },
 };
 
@@ -15,14 +15,11 @@ use nom::{
     combinator::{map, map_res},
     multi::separated_list1,
     sequence::separated_pair,
-    IResult, Or,
+    IResult,
 };
-use rayon::{
-    iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator},
-    ThreadPoolBuilder,
-};
+use rayon::iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use tailcall::tailcall;
-use tracing::{Level, Span};
+use tracing::Level;
 use tracing_indicatif::{span_ext::IndicatifSpanExt, IndicatifLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
@@ -129,7 +126,7 @@ fn solve_both(allowed: &[Operator]) -> anyhow::Result<u64> {
     let (_, numbers) = parse_input(input)?;
 
     let span = tracing::span!(Level::INFO, "try_solve");
-    span.pb_set_style(&ProgressStyle::default_bar().template("{elapsed} {bar} {pos:>7}/{len:7}")?);
+    span.pb_set_style(&ProgressStyle::default_bar().template("{elapsed} {bar:24}  {pos}/{len}")?);
     span.pb_set_length(numbers.len() as u64);
     let _span = span.enter();
 
