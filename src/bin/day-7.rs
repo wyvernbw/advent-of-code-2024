@@ -1,5 +1,11 @@
-#![feature(iter_map_windows)]
-use std::{collections::HashMap, ops::Div};
+use std::{
+    collections::HashMap,
+    ops::Div,
+    sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc, Mutex,
+    },
+};
 
 use anyhow::{anyhow, bail, Context};
 use indicatif::ProgressStyle;
@@ -9,10 +15,14 @@ use nom::{
     combinator::{map, map_res},
     multi::separated_list1,
     sequence::separated_pair,
-    IResult,
+    IResult, Or,
+};
+use rayon::{
+    iter::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator},
+    ThreadPoolBuilder,
 };
 use tailcall::tailcall;
-use tracing::{span, Level, Span};
+use tracing::{Level, Span};
 use tracing_indicatif::{span_ext::IndicatifSpanExt, IndicatifLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
@@ -24,8 +34,8 @@ fn main() -> anyhow::Result<()> {
         .with(tracing_subscriber::fmt::layer().with_writer(indicatif_layer.get_stderr_writer()))
         .with(indicatif_layer)
         .init();
-    tracing::info!(part_1 = ?part_1());
-    tracing::info!(part_2 = ?part_2());
+    tracing::info!(part_1 = ?part_1(), "🔥");
+    tracing::info!(part_2 = ?part_2(), "🔥");
     Ok(())
 }
 
@@ -84,16 +94,19 @@ fn solve_both(allowed: &[Operator]) -> anyhow::Result<u64> {
     let _span = span.enter();
 
     let (sum, cache_accuracy) = numbers
-        .iter()
+        .par_iter()
         .enumerate()
         .flat_map(|(i, numbers)| {
-            Span::current().pb_inc(1);
+            //Span::current().pb_inc(1);
+            span.pb_inc(1);
             let span = tracing::span!(Level::INFO, "", i = i);
             let _span = span.enter();
             try_solve(numbers, allowed, None, None, None)
         })
-        .reduce(|acc, el| (acc.0 + el.0, acc.1.compose(el.1)))
-        .unwrap_or((0, CacheStats::default()));
+        .reduce(
+            || (0, CacheStats::default().into()),
+            |acc, el| (acc.0 + el.0, acc.1.compose(el.1.as_ref()).into()),
+        );
     tracing::info!("cache_accuracy = {:.2}", cache_accuracy.accuracy());
     Ok(sum)
 }
@@ -108,32 +121,35 @@ fn part_2() -> anyhow::Result<u64> {
 
 type Memo<'a> = HashMap<&'a [Operator], u64>;
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default)]
 struct CacheStats {
-    accesses: usize,
-    hits: usize,
-    misses: usize,
+    accesses: AtomicUsize,
+    hits: AtomicUsize,
+    misses: AtomicUsize,
 }
 
 impl CacheStats {
-    fn hit(&mut self) -> &mut Self {
-        self.hits += 1;
-        self.accesses += 1;
+    fn hit(&self) -> &Self {
+        self.hits.fetch_add(1, Ordering::Relaxed);
+        self.accesses.fetch_add(1, Ordering::Relaxed);
         self
     }
-    fn miss(&mut self) -> &mut Self {
-        self.misses += 1;
-        self.accesses += 1;
+    fn miss(&self) -> &Self {
+        self.misses.fetch_add(1, Ordering::Relaxed);
+        self.accesses.fetch_add(1, Ordering::Relaxed);
         self
     }
     fn accuracy(&self) -> f64 {
-        (self.hits as f64).div(self.accesses as f64)
+        (self.hits.load(Ordering::Relaxed) as f64).div(self.accesses.load(Ordering::Relaxed) as f64)
     }
-    fn compose(self, other: Self) -> Self {
+    fn compose(&self, other: &Self) -> Self {
+        let add_atomics = |a: &AtomicUsize, b: &AtomicUsize| {
+            a.load(Ordering::Relaxed) + b.load(Ordering::Relaxed)
+        };
         Self {
-            accesses: self.accesses + other.accesses,
-            hits: self.hits + other.hits,
-            misses: self.misses + other.misses,
+            hits: add_atomics(&self.hits, &other.hits).into(),
+            misses: add_atomics(&self.misses, &other.misses).into(),
+            accesses: add_atomics(&self.accesses, &other.accesses).into(),
         }
     }
 }
@@ -144,13 +160,12 @@ fn try_solve(
     allowed: &[Operator],
     operators: Option<&[Operator]>,
     memo: Option<Memo<'_>>,
-    cache_stats: Option<&mut CacheStats>,
-) -> anyhow::Result<(u64, CacheStats)> {
+    cache_stats: Option<Arc<CacheStats>>,
+) -> anyhow::Result<(u64, Arc<CacheStats>)> {
     let required_operators = numbers.numbers.len() - 1;
     let operators = operators.unwrap_or(&[]);
     let memo = memo.unwrap_or_default();
-    let mut cs = CacheStats::default();
-    let cache_stats = cache_stats.unwrap_or(&mut cs);
+    let cache_stats = cache_stats.unwrap_or_default();
     tracing::trace!(?memo);
     match (allowed, operators) {
         (&[], _) => bail!("No solution"),
@@ -203,15 +218,19 @@ fn try_solve(
                 let rhs = numbers.numbers[new_ops.len()];
                 let res = op.apply(res, rhs);
                 memo.insert(new_ops, res);
-                acc.or_else(|_| {
-                    try_solve(
-                        numbers,
-                        allowed,
-                        Some(new_ops),
-                        Some(memo),
-                        Some(cache_stats),
-                    )
-                })
+                if res > numbers.result {
+                    acc
+                } else {
+                    acc.or_else(|_| {
+                        try_solve(
+                            numbers,
+                            allowed,
+                            Some(new_ops),
+                            Some(memo),
+                            Some(cache_stats.clone()),
+                        )
+                    })
+                }
             }),
     }
 }
