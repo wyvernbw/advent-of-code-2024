@@ -9,6 +9,7 @@ use nom::{
     sequence::pair,
     IResult,
 };
+use tracing::instrument;
 
 fn main() -> anyhow::Result<()> {
     aoc2024::init_tracing()?;
@@ -82,8 +83,8 @@ impl<'e> FreeSpacePointer<'e, Skip<Iter<'e, Entry>>> {
     }
 }
 
+#[instrument(skip(entries, disk_usage))]
 fn part_1(entries: &[Entry], disk_usage: usize) -> usize {
-    let _span = tracing::trace_span!("part_1").entered();
     tracing::trace!(entries = ?entries);
     let remapped: Vec<_> = entries
         .iter()
@@ -260,11 +261,9 @@ impl Display for Disk {
     }
 }
 
+#[instrument(skip(entries))]
 fn part_2(entries: &[Entry]) -> usize {
-    let _span = tracing::trace_span!("part_2").entered();
-    let _info_span = tracing::info_span!("part_2").entered();
     let disk = Disk::new(entries);
-    tracing::trace!(?disk);
     let disk = entries
         .iter()
         .rev()
