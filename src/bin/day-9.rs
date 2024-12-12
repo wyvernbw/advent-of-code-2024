@@ -216,19 +216,21 @@ impl Disk {
             let new_position = self.0.iter().take(block_idx).position(
                 |other| matches!(other, Block::Empty { size } if size >= &block.size()),
             )?;
-            if let Some(prev_idx) = block_idx.checked_sub(1) {
-                if let Some(prev_block) = self.0.get_mut(prev_idx) {
-                    match prev_block {
-                        Block::Empty { size } => {
-                            *size += block.size();
-                        }
-                        Block::Data { .. } => {
-                            let empty_space = block.size();
-                            self.0
-                                .insert(prev_idx + 1, Block::Empty { size: empty_space });
-                        }
-                    }
+            let previous = block_idx.checked_sub(1).and_then(|prev_idx| {
+                self.0
+                    .get_mut(prev_idx)
+                    .map(|prev_block| (prev_idx, prev_block))
+            });
+            match previous {
+                Some((_, Block::Empty { size })) => {
+                    *size += block.size();
                 }
+                Some((prev_idx, Block::Data { .. })) => {
+                    let empty_space = block.size();
+                    self.0
+                        .insert(prev_idx + 1, Block::Empty { size: empty_space });
+                }
+                None => {}
             }
             let mut empty_block = self.0.remove(new_position);
             *empty_block.size_mut() = empty_block.size().saturating_sub(block.size());
