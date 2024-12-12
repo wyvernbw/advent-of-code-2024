@@ -4,7 +4,10 @@ use tracing_indicatif::IndicatifLayer;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 pub fn init_tracing() -> anyhow::Result<()> {
-    let env_filter = EnvFilter::from_default_env().add_directive("info".parse()?);
+    let env_filter = EnvFilter::builder()
+        .with_default_directive("info".parse()?)
+        .from_env_lossy();
+    println!("using env filter {:?}", env_filter);
     let indicatif_layer = IndicatifLayer::new();
 
     tracing_subscriber::registry()
